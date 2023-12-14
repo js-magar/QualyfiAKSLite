@@ -1,7 +1,6 @@
-param appGatewaySubnetName string
 param appGatewayPIPName string
 param appGatewayName string
-param virtualNetworkName string
+param appGatewaySubnetID string
 
 param location string
 var appGWSku = 'Standard_v2' 
@@ -11,11 +10,6 @@ var appGWhttpListenerName='appGWHttpListener'
 var appGWBAddressPoolName='backendAddressPool'
 var appGWBHttpSettingsName = 'backendHttpPort80'
 
-
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {
-  name: virtualNetworkName
-}
-resource AppGatewaySubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: appGatewaySubnetName,parent: virtualNetwork}
 resource appGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
   name: appGatewayPIPName
   location: location
@@ -74,7 +68,7 @@ resource appGateway 'Microsoft.Network/applicationGateways@2023-05-01'  = {
         name:'appGatewayIPConfig'
         properties:{
           subnet:{
-            id:AppGatewaySubnet.id
+            id:appGatewaySubnetID
           }
         }
       }

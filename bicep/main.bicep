@@ -1,7 +1,5 @@
 param entraGroupID string
 param acrRoleDefName string 
-param contributorRoleDefName string
-param readerRoleDefName string
 param netContributorRoleDefName string
 param keyVaultAdminRoleDefName string
 param keyVaultUserRoleDefName string
@@ -14,9 +12,7 @@ param aksClusterName string
 param acrName string
 param location string
 param keyVaultName string
-param name string
 param prefix string = 'aks-jm'
-param prefixWO string = 'aksjm'
 
 var vnetAddressPrefix = '10'
 var virtualNetworkName = '${prefix}-vnet'
@@ -46,7 +42,6 @@ var natGatewayPIPName = '${prefix}-pip-ng-${location}-001'
 
 var logAnalyticsWorkspaceName = '${prefix}-log-acr-${location}-1'
 
-var natGatewayID = natGateway.id 
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name:logAnalyticsWorkspaceName
@@ -57,99 +52,35 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
     }
   }
 }
-resource natGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
-  name: natGatewayPIPName
-  location: location
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-  }
-}
-resource natGateway 'Microsoft.Network/natGateways@2022-05-01' = {
-  name: natGatewayName
-  location: location
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    idleTimeoutInMinutes: 4
-    publicIpAddresses: [{id: natGatewayPIP.id}]
-  }
-}
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
-  name: virtualNetworkName
-  location: location
-  properties: {
-    addressSpace: {
-      addressPrefixes: [
-        '${vnetAddressPrefix}.0.0.0/8'
-      ]
-    }
-    subnets: [
-      {
-        name: systemPoolSubnetName
-        properties: {
-          addressPrefix: '${vnetAddressPrefix}.${systemPoolSubnetAddressPrefix}.0.0/16'
-          natGateway:{
-            id:natGatewayID
-          }
-        }
-      }
-      {
-        name: appPoolSubnetName
-        properties: {
-          addressPrefix: '${vnetAddressPrefix}.${appPoolSubnetAddressPrefix}.0.0/16'
-          natGateway:{
-            id:natGatewayID
-          }
-        }
-      }
-      {
-        name: podSubnetName
-        properties: {
-          addressPrefix: '${vnetAddressPrefix}.${podSubnetAddressPrefix}.0.0/16'
-          natGateway:{
-            id:natGatewayID
-          }
-          delegations: [
-            {
-              name: 'Delegation'
-              properties: {
-                serviceName: 'Microsoft.ContainerService/managedClusters'
-              }
-            }
-          ]
-        }
-      }
-      {
-        name: appGatewaySubnetName
-        properties: {
-          addressPrefix: '${vnetAddressPrefix}.${appgwbastionPrefix}.${appGatewaySubnetAddressPrefix}.0/24'
-        }
-      }
-      {
-        name: bastionSubnetName
-        properties: {
-          addressPrefix: '${vnetAddressPrefix}.${appgwbastionPrefix}.${bastionSubnetAddressPrefix}.0/24'
-        }
-      }
-    ]
+module virtualNetwork 'modules/networking.bicep' = {
+  name: 'virtualNetworkDeployment'
+  params:{
+    location :location
+    natGatewayPIPName :natGatewayPIPName
+    natGatewayName :natGatewayName
+    virtualNetworkName :virtualNetworkName
+    vnetAddressPrefix :vnetAddressPrefix
+    systemPoolSubnetName :systemPoolSubnetName
+    systemPoolSubnetAddressPrefix :systemPoolSubnetAddressPrefix
+    appPoolSubnetName :appPoolSubnetName
+    appPoolSubnetAddressPrefix :appPoolSubnetAddressPrefix
+    podSubnetName :podSubnetName
+    podSubnetAddressPrefix :podSubnetAddressPrefix
+    appGatewaySubnetName :appGatewaySubnetName
+    appGatewaySubnetAddressPrefix :appGatewaySubnetAddressPrefix
+    bastionSubnetName :bastionSubnetName
+    bastionSubnetAddressPrefix  :bastionSubnetAddressPrefix
+    appgwbastionPrefix :appgwbastionPrefix
   }
 }
 module appGateway 'modules/appGateway.bicep'={
   name:'appGatewayDeployment'
   params:{
-    appGatewaySubnetName : appGatewaySubnetName
+    appGatewaySubnetID : virtualNetwork.outputs.appGatewaySubnetID
     appGatewayPIPName:appGatewayPIPName
     appGatewayName:appGatewayName
-    virtualNetworkName:virtualNetworkName
     location:location
   }
-  dependsOn:[
-    virtualNetwork
-  ]
 }
 module acr 'modules/acr.bicep' = {
   name:'appContainerRegistryDeployment'
@@ -166,10 +97,9 @@ module aksCluster 'modules/aksCluster.bicep' = {
     entraGroupID:entraGroupID
     logAnalyticsWorkspaceID :logAnalyticsWorkspace.id
     appGatewayID:appGateway.outputs.appGatwayId
-    vnetName:virtualNetworkName
-    appSubnetName:appPoolSubnetName
-    systemSubnetName:systemPoolSubnetName
-    podSubnetName:podSubnetName
+    appPoolSubnetID: virtualNetwork.outputs.appPoolSubnetID
+    systemPoolSubnetID: virtualNetwork.outputs.systemPoolSubnetID
+    podPoolSubnetID: virtualNetwork.outputs.podPoolSubnetID
     location:location
     adminUsername:adminUsername
     adminPasOrKey:adminPasOrKey
@@ -177,28 +107,12 @@ module aksCluster 'modules/aksCluster.bicep' = {
     netContributorRoleDefName:netContributorRoleDefName
   }
 }
-module metrics 'modules/monitor_metrics.bicep' = {
-  name: 'metricsDeployment'
-  params:{
-    location:location
-    clusterName:aksClusterName  
-    entraGroupID:entraGroupID
-    monitoringReaderRoleDefName:monitoringReaderRoleDefName
-    monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
-    grafanaAdminRoleDefName:grafanaAdminRoleDefName
-  }
-  dependsOn:[
-    acr
-    aksCluster
-    appGateway
-  ]
-}
+
 module bastion 'modules/bastion.bicep' = {
   name: 'bastionDeployment'
   params:{
     location:location
-    vnetName:virtualNetwork.name
-    bastionSubnetName:bastionSubnetName
+    bastionSubnetID:virtualNetwork.outputs.bastionSubnetID
     bastionName:bastionName
     bastionPIPName:bastionPIPName
   }
@@ -217,7 +131,22 @@ module keyVaultMI 'modules/keyVaultMI.bicep' = {
     kvManagedIdentityName:keyVault.outputs.kvIdentityUserDefinedManagedIdentityName
     keyVaultUserRoleDefName:keyVaultUserRoleDefName
     keyVaultAdminRoleDefName:keyVaultAdminRoleDefName
-    appGWName:appGateway.outputs.appGatwayName
     aksClusterName:aksCluster.outputs.aksClusterName
   }
+}
+module metrics 'modules/monitor_metrics.bicep' = {
+  name: 'metricsDeployment'
+  params:{
+    location:location
+    clusterName:aksClusterName  
+    entraGroupID:entraGroupID
+    monitoringReaderRoleDefName:monitoringReaderRoleDefName
+    monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
+    grafanaAdminRoleDefName:grafanaAdminRoleDefName
+  }
+  dependsOn:[
+    acr
+    aksCluster
+    appGateway
+  ]
 }

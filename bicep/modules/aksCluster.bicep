@@ -2,15 +2,14 @@ param aksClusterName string
 param entraGroupID string
 param logAnalyticsWorkspaceID string
 param appGatewayID string
-param vnetName string
-param systemSubnetName string
-param appSubnetName string
-param podSubnetName string
 param adminUsername string
 param adminPasOrKey string
 param prefix string = 'aks-jm'
 param acrPullRDName string 
 param netContributorRoleDefName string 
+param appPoolSubnetID string
+param systemPoolSubnetID string
+param podPoolSubnetID string
 
 param location string
 var maxPods = 250
@@ -18,7 +17,6 @@ var maxCount= 20
 var minCount= 1
 var startingCount= 2
 
-var aksClusterUserDefinedManagedIdentityName = '${prefix}-mi-cluster-${location}'
 var aksClusterDNSPrefix ='akscluster-jash'
 var rgName = resourceGroup().name
 var acrPullRoleAssignmentName = guid('${resourceGroup().id}acrPullRoleAssignment')
@@ -26,15 +24,6 @@ var appGwNetContributorRoleAssignmentName = guid(appGatewayID, netContributorRol
 var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRDName)
 var netContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', netContributorRoleDefName)
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {name: vnetName}
-resource AppPoolSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: appSubnetName,parent: virtualNetwork}
-resource SystemPoolSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: systemSubnetName,parent: virtualNetwork}
-resource PodSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: podSubnetName,parent: virtualNetwork}
-
-resource aksClusterUserDefinedManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: aksClusterUserDefinedManagedIdentityName
-  location: location
-}
 resource aksClusterResource 'Microsoft.ContainerService/managedClusters@2023-08-01' = {
   name: aksClusterName
   location: location
@@ -43,11 +32,7 @@ resource aksClusterResource 'Microsoft.ContainerService/managedClusters@2023-08-
       tier: 'Free'
   }
   identity: {
-      type: 'UserAssigned'
-      userAssignedIdentities: {
-        '${aksClusterUserDefinedManagedIdentity.id}': {
-        }
-      }
+      type: 'SystemAssigned'
   }
   properties: {
     kubernetesVersion: '1.27.7' 
@@ -65,8 +50,8 @@ resource aksClusterResource 'Microsoft.ContainerService/managedClusters@2023-08-
         {name: 'systempool'
           count: startingCount
           vmSize: 'Standard_DS2_v2' 
-          vnetSubnetID:SystemPoolSubnet.id
-          podSubnetID:PodSubnet.id
+          vnetSubnetID:systemPoolSubnetID
+          podSubnetID:podPoolSubnetID
           maxPods:maxPods
           maxCount:maxCount
           minCount:minCount
@@ -79,8 +64,8 @@ resource aksClusterResource 'Microsoft.ContainerService/managedClusters@2023-08-
         {name: 'apppool'
           count: startingCount
           vmSize: 'Standard_DS2_v2' 
-          vnetSubnetID:AppPoolSubnet.id
-          podSubnetID:PodSubnet.id
+          vnetSubnetID:appPoolSubnetID
+          podSubnetID:podPoolSubnetID
           maxPods:maxPods
           maxCount:maxCount
           minCount:minCount
@@ -153,4 +138,3 @@ resource appGwNetContributorRoleAssignment 'Microsoft.Authorization/roleAssignme
 
 output aksClusterId string = aksClusterResource.id
 output aksClusterName string = aksClusterResource.name
-output aksClusterUserDefinedManagedIdentityName string = aksClusterUserDefinedManagedIdentity.name

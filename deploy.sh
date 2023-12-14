@@ -1,9 +1,19 @@
 # azure-devops-track-aks-exercise-jash
 export MSYS_NO_PATHCONV=1
+
 SubId="e5cfa658-369f-4218-b58e-cece3814d3f1"
 az account set --subscription $SubId
 echo "Set Subscription"
-#ssh-keygen -m PEM -t rsa -b 4096 -f ./keys/keys
+
+
+if [ -f ./keys/keys.pub ]; then
+    echo "Key File Exists"
+else
+    echo "Creating Key File"
+    ssh-keygen -m PEM -t rsa -b 4096 -f ./keys/keys.pub
+fi
+
+#Variables
 SSHKey=$(awk '{print $2}' ./keys/keys.pub)
 UserName="jashusername"
 Name="jash"
@@ -18,11 +28,10 @@ BastionName="$Prefix-bas-$Location-001"
 AppGatewayName="$Prefix-agw-$Location-001"
 CostSaving=true
 ProdDeployment=true
+
 #RoleDefinitons
 ID=$(az ad group list --display-name 'AKS EID Admin Group' --query "[].{id:id}" --output tsv)
 AcrPullRoleDefiniton=$(az role definition list --name 'AcrPull' --query "[].{name:name}" --output tsv)
-ReaderRoleDefiniton=$(az role definition list --name 'Reader' --query "[].{name:name}" --output tsv)
-ContributorRoleDefiniton=$(az role definition list --name 'Contributor' --query "[].{name:name}" --output tsv)
 NetworkContribnutorRoleDefiniton=$(az role definition list --name 'Network Contributor' --query "[].{name:name}" --output tsv)
 KeyVaultAdminRoleDefiniton=$(az role definition list --name 'Key Vault Administrator' --query "[].{name:name}" --output tsv)
 KeyVaultSecretsUserRoleDefinition=$(az role definition list --name 'Key Vault Secrets User' --query "[].{name:name}" --output tsv)
@@ -33,15 +42,17 @@ GrafanaAdminRoleDefinition=$(az role definition list --name 'Grafana Admin' --qu
 echo "Creating RG $RGName"
 az group create --name $RGName --location $Location >nul
 echo "RG Created"
+
+echo ""
+
 echo "Bicep Deployment Started"
 az deployment group create --mode Complete --no-prompt true --resource-group $RGName --template-file ./bicep/main.bicep \
- --parameters entraGroupID=$ID acrRoleDefName=$AcrPullRoleDefiniton readerRoleDefName=$ReaderRoleDefiniton \
- contributorRoleDefName=$ContributorRoleDefiniton netContributorRoleDefName=$NetworkContribnutorRoleDefiniton \
+ --parameters entraGroupID=$ID acrRoleDefName=$AcrPullRoleDefiniton netContributorRoleDefName=$NetworkContribnutorRoleDefiniton \
  keyVaultAdminRoleDefName=$KeyVaultAdminRoleDefiniton keyVaultUserRoleDefName=$KeyVaultSecretsUserRoleDefinition monitoringReaderRoleDefName=$MonitoringReaderRoleDefinition  \
  monitoringDataReaderRoleDefName=$MonitoringDataReaderRoleDefinition grafanaAdminRoleDefName=$GrafanaAdminRoleDefinition \
- keyVaultName=$KVName adminUsername=$UserName adminPasOrKey=$SSHKey aksClusterName=$AksClusterName prodDeployment=$ProdDeployment \
- acrName=$AcrName bastionName=$BastionName appGatewayName=$AppGatewayName location=$Location name=$Name prefix=$Prefix prefixWO=$PrefixWO >nul
-# Check the exit status using $?
+ keyVaultName=$KVName adminUsername=$UserName adminPasOrKey=$SSHKey aksClusterName=$AksClusterName \
+ acrName=$AcrName bastionName=$BastionName appGatewayName=$AppGatewayName location=$Location prefix=$Prefix >nul
+
 if [ $? -ne 0 ]; then
     echo "Bicep Deployment Has Error"
 else
@@ -57,35 +68,37 @@ echo "Front Built"
 echo "Building Back"
 az acr import --resource-group $RGName --name $AcrName --image redis:6.0.8 --source mcr.microsoft.com/oss/bitnami/redis:6.0.8 >nul
 echo "Back Built"
-#az import
 echo "ACR Build Completed"
 
 VALUE=demovalue
 SECRET=demosecret
 AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)
 CLIENT_ID=$(az aks show -g $RGName -n $AksClusterName --query addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -o tsv)
-
+echo "Getting AKS Credentials"
 az aks get-credentials --resource-group $RGName --name $AksClusterName --overwrite-existing
+echo "ACR Server Name"
 az acr list --resource-group $RGName --query "[].{acrLoginServer:loginServer}" --output table 
+echo "Creating Example Secret"
 az role assignment create --assignee-object-id $ID --role "Key Vault Administrator" \
- --scope "/subscriptions/$SubId/resourceGroups/$RGName/providers/Microsoft.KeyVault/vaults/$KVName"
-az keyvault secret set --vault-name $KVName --name $SECRET --value $VALUE
+ --scope "/subscriptions/$SubId/resourceGroups/$RGName/providers/Microsoft.KeyVault/vaults/$KVName" >nul
+az keyvault secret set --vault-name $KVName --name $SECRET --value $VALUE >nul
 
 export secretProviderClassName='jashspc'
 export clientId=$CLIENT_ID
 export KVName=$KVName
 export tenantId=$AZURE_TENANT_ID
 export secretName=$SECRET
- 
-kubectl create namespace production
+
+echo "Creating Namespace"
+kubectl create namespace production >nul
+echo ""
+echo "Deploying Services + Ingresses"
 envsubst < yaml/azure-vote.yaml | kubectl apply -f - --namespace production
-kubectl apply -f ./yaml/container-azm-ms-agentconfig.yaml
+kubectl apply -f ./yaml/container-azm-ms-agentconfig.yaml 
+echo ""
+echo "Configuring Horizontal autoscaling"
 kubectl autoscale deployment azure-vote-front --namespace production --cpu-percent=50 --min=1 --max=10
 kubectl autoscale deployment azure-vote-back --namespace production --cpu-percent=50 --min=1 --max=10
 sleep 10 
-
-#kubectl get pods --namespace production
-#kubectl describe pods --namespace production
-
-#./tests/test1.sh $RGName $AppGatewayName
-#./tests/test3.sh $RGName $BastionName $UserName
+echo ""
+echo "Completed"

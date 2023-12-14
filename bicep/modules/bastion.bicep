@@ -1,13 +1,8 @@
 param location string
-param bastionSubnetName string
-param vnetName string
 param tags object ={tag:'tag'}
 param bastionName string
 param bastionPIPName string
-
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {name: vnetName}
-resource BastionSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: bastionSubnetName,parent: virtualNetwork}
-
+param bastionSubnetID string
 
 resource bastionPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
   name: bastionPIPName
@@ -35,7 +30,7 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-05-01' = {
         name: 'ipconfig'
         properties: {
           subnet: {
-            id: BastionSubnet.id
+            id: bastionSubnetID
           }
           publicIPAddress: {
             id: bastionPIP.id
