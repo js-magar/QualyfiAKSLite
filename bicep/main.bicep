@@ -15,8 +15,6 @@ param acrName string
 param location string
 param keyVaultName string
 param name string
-param prodDeployment bool = false
-param costSaving bool = true
 param prefix string = 'aks-jm'
 param prefixWO string = 'aksjm'
 
@@ -44,15 +42,11 @@ var bastionSubnetName = 'AzureBastionSubnet'
 var bastionPIPName = '${prefix}-pip-bas-${location}-001'
 
 var natGatewayName = '${prefix}-ng-${location}-001'
-var natGatewayPIPPrefixName = '${prefix}-ippre-ng-${location}-001'
 var natGatewayPIPName = '${prefix}-pip-ng-${location}-001'
 
 var logAnalyticsWorkspaceName = '${prefix}-log-acr-${location}-1'
-//condition ? valueIfTrue : valueIfFalse
-//var grafanaName=prodDeployment?metrics.outputs.grafanaName : ''
-//var prometheusName=prodDeployment?metrics.outputs.name : ''
 
-var natGatewayID = costSaving? natGatewayWithPIP.id : natGatewayWithPrefix.id
+var natGatewayID = natGateway.id 
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name:logAnalyticsWorkspaceName
@@ -63,30 +57,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
     }
   }
 }
-resource publicIPPrefix 'Microsoft.Network/publicIPPrefixes@2022-05-01' = if(!costSaving){
-  name: natGatewayPIPPrefixName
-  location: location
-  sku: {
-    name: 'Standard'
-    tier: 'Regional'
-  }
-  properties: {
-    prefixLength: 28
-    publicIPAddressVersion: 'IPv4'
-  }
-}
-resource natGatewayWithPrefix 'Microsoft.Network/natGateways@2022-05-01' = if(!costSaving){
-  name: natGatewayName
-  location: location
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    idleTimeoutInMinutes: 4
-    publicIpPrefixes: [{id: publicIPPrefix.id}]
-  }
-}
-resource natGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' =  if(costSaving){
+resource natGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
   name: natGatewayPIPName
   location: location
   sku: {
@@ -96,7 +67,7 @@ resource natGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' =  if(co
     publicIPAllocationMethod: 'Static'
   }
 }
-resource natGatewayWithPIP 'Microsoft.Network/natGateways@2022-05-01' = if(costSaving){
+resource natGateway 'Microsoft.Network/natGateways@2022-05-01' = {
   name: natGatewayName
   location: location
   sku: {
@@ -104,7 +75,6 @@ resource natGatewayWithPIP 'Microsoft.Network/natGateways@2022-05-01' = if(costS
   }
   properties: {
     idleTimeoutInMinutes: 4
-    //publicIpPrefixes: [{id: publicIPPrefix.id}]
     publicIpAddresses: [{id: natGatewayPIP.id}]
   }
 }
@@ -168,7 +138,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
     ]
   }
 }
-module appGateway 'modules/app.bicep'={
+module appGateway 'modules/appGateway.bicep'={
   name:'appGatewayDeployment'
   params:{
     appGatewaySubnetName : appGatewaySubnetName
@@ -176,7 +146,6 @@ module appGateway 'modules/app.bicep'={
     appGatewayName:appGatewayName
     virtualNetworkName:virtualNetworkName
     location:location
-    costSaving:costSaving
   }
   dependsOn:[
     virtualNetwork
@@ -204,21 +173,15 @@ module aksCluster 'modules/aksCluster.bicep' = {
     location:location
     adminUsername:adminUsername
     adminPasOrKey:adminPasOrKey
-    costSaving:costSaving
     acrPullRDName:acrRoleDefName
     netContributorRoleDefName:netContributorRoleDefName
   }
-  dependsOn:[
-    appGateway
-    keyVault //TRY TO REMOVE
-  ]
 }
 module metrics 'modules/monitor_metrics.bicep' = {
   name: 'metricsDeployment'
   params:{
     location:location
-    clusterName:aksClusterName
-    prodDeployment:prodDeployment  
+    clusterName:aksClusterName  
     entraGroupID:entraGroupID
     monitoringReaderRoleDefName:monitoringReaderRoleDefName
     monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
@@ -230,7 +193,7 @@ module metrics 'modules/monitor_metrics.bicep' = {
     appGateway
   ]
 }
-module bastion 'modules/bastion.bicep' = if(prodDeployment){
+module bastion 'modules/bastion.bicep' = {
   name: 'bastionDeployment'
   params:{
     location:location
@@ -240,36 +203,6 @@ module bastion 'modules/bastion.bicep' = if(prodDeployment){
     bastionPIPName:bastionPIPName
   }
 }
-/*
-module managedIdentities 'modules/managedIdentity.bicep' = {
-  name: 'managedIdentitiesDeployment'
-  params:{
-    acrPullRDName:acrRoleDefName
-    aksResourceID:aksCluster.outputs.aksClusterId
-    contributorRoleDefName:contributorRoleDefName
-    netContributorRoleDefName:netContributorRoleDefName
-    readerRoleDefName:readerRoleDefName
-    aksClusterUserDefinedManagedIdentityName:aksCluster.outputs.aksClusterUserDefinedManagedIdentityName
-    applicationGatewayUserDefinedManagedIdentityName:appGateway.outputs.appGatwayUDMName
-    aksClusterName:aksClusterName
-    keyVaultName:keyVaultName
-    kvManagedIdentityName:keyVault.outputs.kvIdentityUserDefinedManagedIdentityName
-    keyVaultUserRoleDefName:keyVaultUserRoleDefName
-    keyVaultAdminRoleDefName:keyVaultAdminRoleDefName
-    grafanaName:grafanaName
-    groupId:entraGroupID
-    prometheusName:prometheusName
-    monitoringReaderRoleDefName:monitoringReaderRoleDefName
-    monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
-    grafanaAdminRoleDefName:grafanaAdminRoleDefName
-    prodDeployment:prodDeployment
-  }
-  dependsOn:[
-    acr
-    metrics
-  ]
-}
-*/
 module keyVault 'modules/keyVault.bicep' = {
   name: 'keyVaultDeployment'
   params:{

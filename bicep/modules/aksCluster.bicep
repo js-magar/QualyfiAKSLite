@@ -8,17 +8,15 @@ param appSubnetName string
 param podSubnetName string
 param adminUsername string
 param adminPasOrKey string
-param costSaving bool
 param prefix string = 'aks-jm'
 param acrPullRDName string 
 param netContributorRoleDefName string 
 
 param location string
-//condition ? valueIfTrue : valueIfFalse
-var maxPods = costSaving ? 150 : 250
-var maxCount=costSaving ? 1 : 20
-var minCount=costSaving ? 1 : 1
-var startingCount=costSaving ? 1 : 2
+var maxPods = 250
+var maxCount= 20
+var minCount= 1
+var startingCount= 2
 
 var aksClusterUserDefinedManagedIdentityName = '${prefix}-mi-cluster-${location}'
 var aksClusterDNSPrefix ='akscluster-jash'
