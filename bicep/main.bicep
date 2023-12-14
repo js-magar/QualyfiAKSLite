@@ -15,9 +15,13 @@ param acrName string
 param location string
 param keyVaultName string
 param name string
+param prodDeployment bool = false
+param costSaving bool = true
+param prefix string = 'aks-jm'
+param prefixWO string = 'aksjm'
 
 var vnetAddressPrefix = '10'
-var virtualNetworkName = '${name}VirtualNetwork'
+var virtualNetworkName = '${prefix}-vnet'
 
 var systemPoolSubnetName = 'SystemPoolSubnet'
 var systemPoolSubnetAddressPrefix = '1'
@@ -32,18 +36,23 @@ var appgwbastionPrefix ='4'
 var appGatewaySubnetAddressPrefix = '1'
 var appGatewaySubnetName = 'AppgwSubnet'
 param appGatewayName string
-var appGatewayPIPName = 'pip-${appGatewayName}'
+var appGatewayPIPName = '${prefix}-pip-agw-${location}-001'
 
 var bastionSubnetAddressPrefix = '2'
 param bastionName string
 var bastionSubnetName = 'AzureBastionSubnet'
+var bastionPIPName = '${prefix}-pip-bas-${location}-001'
 
-var natGatewayName = 'ng-${name}-${location}-001'
-var natGatewayPIPPrefixName = 'ippre-${natGatewayName}'
+var natGatewayName = '${prefix}-ng-${location}-001'
+var natGatewayPIPPrefixName = '${prefix}-ippre-ng-${location}-001'
+var natGatewayPIPName = '${prefix}-pip-ng-${location}-001'
 
-var logAnalyticsWorkspaceName = 'log-acr-${name}-${location}-1'
+var logAnalyticsWorkspaceName = '${prefix}-log-acr-${location}-1'
+//condition ? valueIfTrue : valueIfFalse
+//var grafanaName=prodDeployment?metrics.outputs.grafanaName : ''
+//var prometheusName=prodDeployment?metrics.outputs.name : ''
 
-
+var natGatewayID = costSaving? natGatewayWithPIP.id : natGatewayWithPrefix.id
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name:logAnalyticsWorkspaceName
@@ -54,7 +63,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
     }
   }
 }
-resource publicIPPrefix 'Microsoft.Network/publicIPPrefixes@2022-05-01' = {
+resource publicIPPrefix 'Microsoft.Network/publicIPPrefixes@2022-05-01' = if(!costSaving){
   name: natGatewayPIPPrefixName
   location: location
   sku: {
@@ -66,7 +75,7 @@ resource publicIPPrefix 'Microsoft.Network/publicIPPrefixes@2022-05-01' = {
     publicIPAddressVersion: 'IPv4'
   }
 }
-resource natGateway 'Microsoft.Network/natGateways@2022-05-01' = {
+resource natGatewayWithPrefix 'Microsoft.Network/natGateways@2022-05-01' = if(!costSaving){
   name: natGatewayName
   location: location
   sku: {
@@ -74,11 +83,29 @@ resource natGateway 'Microsoft.Network/natGateways@2022-05-01' = {
   }
   properties: {
     idleTimeoutInMinutes: 4
-    publicIpPrefixes: [
-      {
-        id: publicIPPrefix.id
-      }
-    ]
+    publicIpPrefixes: [{id: publicIPPrefix.id}]
+  }
+}
+resource natGatewayPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' =  if(costSaving){
+  name: natGatewayPIPName
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+resource natGatewayWithPIP 'Microsoft.Network/natGateways@2022-05-01' = if(costSaving){
+  name: natGatewayName
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    idleTimeoutInMinutes: 4
+    //publicIpPrefixes: [{id: publicIPPrefix.id}]
+    publicIpAddresses: [{id: natGatewayPIP.id}]
   }
 }
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
@@ -96,7 +123,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
         properties: {
           addressPrefix: '${vnetAddressPrefix}.${systemPoolSubnetAddressPrefix}.0.0/16'
           natGateway:{
-            id:natGateway.id
+            id:natGatewayID
           }
         }
       }
@@ -105,7 +132,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
         properties: {
           addressPrefix: '${vnetAddressPrefix}.${appPoolSubnetAddressPrefix}.0.0/16'
           natGateway:{
-            id:natGateway.id
+            id:natGatewayID
           }
         }
       }
@@ -114,7 +141,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' = {
         properties: {
           addressPrefix: '${vnetAddressPrefix}.${podSubnetAddressPrefix}.0.0/16'
           natGateway:{
-            id:natGateway.id
+            id:natGatewayID
           }
           delegations: [
             {
@@ -149,6 +176,7 @@ module appGateway 'modules/app.bicep'={
     appGatewayName:appGatewayName
     virtualNetworkName:virtualNetworkName
     location:location
+    costSaving:costSaving
   }
   dependsOn:[
     virtualNetwork
@@ -176,10 +204,13 @@ module aksCluster 'modules/aksCluster.bicep' = {
     location:location
     adminUsername:adminUsername
     adminPasOrKey:adminPasOrKey
+    costSaving:costSaving
+    acrPullRDName:acrRoleDefName
+    netContributorRoleDefName:netContributorRoleDefName
   }
   dependsOn:[
     appGateway
-    keyVault
+    keyVault //TRY TO REMOVE
   ]
 }
 module metrics 'modules/monitor_metrics.bicep' = {
@@ -187,7 +218,11 @@ module metrics 'modules/monitor_metrics.bicep' = {
   params:{
     location:location
     clusterName:aksClusterName
-    name:name
+    prodDeployment:prodDeployment  
+    entraGroupID:entraGroupID
+    monitoringReaderRoleDefName:monitoringReaderRoleDefName
+    monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
+    grafanaAdminRoleDefName:grafanaAdminRoleDefName
   }
   dependsOn:[
     acr
@@ -195,21 +230,17 @@ module metrics 'modules/monitor_metrics.bicep' = {
     appGateway
   ]
 }
-module bastion 'modules/bastion.bicep' = {
+module bastion 'modules/bastion.bicep' = if(prodDeployment){
   name: 'bastionDeployment'
   params:{
     location:location
     vnetName:virtualNetwork.name
     bastionSubnetName:bastionSubnetName
     bastionName:bastionName
+    bastionPIPName:bastionPIPName
   }
-  /*
-  dependsOn:[
-    acr
-    aksCluster
-    appGateway
-  ]*/
 }
+/*
 module managedIdentities 'modules/managedIdentity.bicep' = {
   name: 'managedIdentitiesDeployment'
   params:{
@@ -225,22 +256,35 @@ module managedIdentities 'modules/managedIdentity.bicep' = {
     kvManagedIdentityName:keyVault.outputs.kvIdentityUserDefinedManagedIdentityName
     keyVaultUserRoleDefName:keyVaultUserRoleDefName
     keyVaultAdminRoleDefName:keyVaultAdminRoleDefName
-    grafanaName:metrics.outputs.grafanaName
+    grafanaName:grafanaName
     groupId:entraGroupID
-    prometheusName:metrics.outputs.name
+    prometheusName:prometheusName
     monitoringReaderRoleDefName:monitoringReaderRoleDefName
     monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
     grafanaAdminRoleDefName:grafanaAdminRoleDefName
+    prodDeployment:prodDeployment
   }
   dependsOn:[
     acr
     metrics
   ]
 }
+*/
 module keyVault 'modules/keyVault.bicep' = {
   name: 'keyVaultDeployment'
   params:{
     location:location
     keyVaultName:keyVaultName
+  }
+}
+module keyVaultMI 'modules/keyVaultMI.bicep' = {
+  name:'keyVaultMIDeployment'
+  params:{
+    keyVaultName:keyVault.outputs.keyVaultName
+    kvManagedIdentityName:keyVault.outputs.kvIdentityUserDefinedManagedIdentityName
+    keyVaultUserRoleDefName:keyVaultUserRoleDefName
+    keyVaultAdminRoleDefName:keyVaultAdminRoleDefName
+    appGWName:appGateway.outputs.appGatwayName
+    aksClusterName:aksCluster.outputs.aksClusterName
   }
 }

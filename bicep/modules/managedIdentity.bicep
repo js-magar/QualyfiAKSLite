@@ -16,6 +16,7 @@ param aksClusterName string
 param grafanaName string
 param groupId string
 param prometheusName string
+param prodDeployment bool
 
 var aksContributorRoleAssignmentName = guid(aksClusterUserDefinedManagedIdentity.id, contributorRoleId, resourceGroup().id)
 var appGwContributorRoleAssignmentName = guid(applicationGatewayUserDefinedManagedIdentity.id, contributorRoleId, resourceGroup().id)
@@ -29,17 +30,12 @@ var readerRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitio
 var netContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', netContributorRoleDefName)
 var kvUserRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultUserRoleDefName)
 var kvAdminRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultAdminRoleDefName)
-var monitoringReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringReaderRoleDefName)
-var monitoringDataReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringDataReaderRoleDefName)
-var grafanaAdminRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', grafanaAdminRoleDefName)
 
 resource applicationGatewayUserDefinedManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' existing  = {name: applicationGatewayUserDefinedManagedIdentityName}
 resource aksClusterUserDefinedManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {name: aksClusterUserDefinedManagedIdentityName}
 resource kvUserDefinedManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' existing  = {name: kvManagedIdentityName}
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {name: keyVaultName}
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-08-01' existing = {name:aksClusterName}
-resource azureMonitorWorkspace 'Microsoft.Monitor/accounts@2023-04-03' existing = {name:prometheusName}
-resource managedGrafana 'Microsoft.Dashboard/grafana@2022-08-01' existing =  {name: grafanaName}
 
 resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: acrPullRoleAssignmentName
@@ -108,32 +104,15 @@ resource keyVaultCSIdriverSecretsUserRole 'Microsoft.Authorization/roleAssignmen
     principalId: aksCluster.properties.addonProfiles.azureKeyvaultSecretsProvider.identity.objectId
   }
 }
-resource monitoringReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name:  guid(managedGrafana.name, azureMonitorWorkspace.name, monitoringReaderRoleId)
-  scope: azureMonitorWorkspace
-  properties: {
-    roleDefinitionId: monitoringReaderRoleId
-    principalId: managedGrafana.identity.principalId
-    principalType: 'ServicePrincipal'
+module grafanaMI 'grafanaMI.bicep' = if(prodDeployment){
+  name: 'grafanaManagedIdentity'
+  params:{
+    grafanaName:grafanaName
+    groupId:groupId
+    prometheusName:prometheusName
+    monitoringReaderRoleDefName:monitoringReaderRoleDefName
+    monitoringDataReaderRoleDefName:monitoringDataReaderRoleDefName
+    grafanaAdminRoleDefName:grafanaAdminRoleDefName
   }
 }
-resource monitoringDataReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name:  guid(managedGrafana.name, azureMonitorWorkspace.name, monitoringDataReaderRoleId)
-  scope: azureMonitorWorkspace
-  properties: {
-    roleDefinitionId: monitoringDataReaderRoleId
-    principalId: managedGrafana.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-resource grafanaAdminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name:  guid(managedGrafana.name, groupId, grafanaAdminRoleId)
-  scope: managedGrafana
-  properties: {
-    roleDefinitionId: grafanaAdminRoleId
-    principalId: groupId
-    principalType: 'Group'
-  }
-}
-
 

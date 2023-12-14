@@ -2,24 +2,35 @@
 param location string = resourceGroup().location
 param clusterName string
 param tags object ={tag:'tag'}
-param name string
+param entraGroupID string
+param monitoringReaderRoleDefName string
+param monitoringDataReaderRoleDefName string
+param grafanaAdminRoleDefName string
+param prodDeployment bool
+param prefix string = 'aks-jm'
 
-var kubernetesRecordingRuleGroupName = 'rg-kubernetes-${clusterName}'
+var kubernetesRecordingRuleGroupName = '${prefix}-rg-kubernetes-cluster'
 var kubernetesRecordingRuleGroupDescription = 'Kubernetes Recording Rules RuleGroup'
 var version = ' - 1'
-var nodeRecordingRuleGroupName = 'rg-node-${clusterName}'
+var nodeRecordingRuleGroupName = '${prefix}-rg-node-cluster'
 var nodeRecordingRuleGroupDescription = 'Node Recording Rules RuleGroup'
+var grafanaName='${prefix}-amg-${location}'
+var dcraName='${prefix}-dcra-${location}-cluster'
+var dcrName='${prefix}-dcr${location}-cluster'
+var dceName='${prefix}-dce-${location}-cluster'
+var mwName='${prefix}-mw-${location}'
+
 
 // Resources
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-06-02-preview' existing = {name: clusterName}
-resource azureMonitorWorkspace 'Microsoft.Monitor/accounts@2023-04-03' = {
-  name: 'mw-${name}-${location}'
+resource azureMonitorWorkspace 'Microsoft.Monitor/accounts@2023-04-03' = if(prodDeployment){
+  name: mwName
   location: location
   tags: tags
 }
 //Prometheus
-resource dataCollectionEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2022-06-01' = {
-  name: 'dce-${name}-${location}-${clusterName}'
+resource dataCollectionEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2022-06-01' = if(prodDeployment){
+  name: dceName
   location: location
   kind: 'Linux'
   tags: tags
@@ -29,8 +40,8 @@ resource dataCollectionEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2022
     }
   }
 }
-resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' = {
-  name: 'dcr-${name}-${location}-${clusterName}'
+resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' = if(prodDeployment){
+  name: dcrName
   location: location
   tags: tags
 
@@ -67,15 +78,15 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' 
     ]
   }
 }
-resource dataCollectionRuleAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = {
-  name: 'dcra-${name}-${location}-${clusterName}'
+resource dataCollectionRuleAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = if(prodDeployment){
+  name: dcraName
   scope: aksCluster
   properties: {
     dataCollectionRuleId: dataCollectionRule.id
     description: 'Association of data collection rule. Deleting this association will break the data collection for this AKS Cluster.'
   }
 }
-resource kubernetesRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' = {
+resource kubernetesRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' = if(prodDeployment){
   name: kubernetesRecordingRuleGroupName
   location: location
   properties: {
@@ -178,7 +189,7 @@ resource kubernetesRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRule
     ]
   }
 }
-resource nodeRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' = {
+resource nodeRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' = if(prodDeployment){
   name: nodeRecordingRuleGroupName
   location: location
   properties: {
@@ -238,8 +249,8 @@ resource nodeRecordingRuleGroup 'Microsoft.AlertsManagement/prometheusRuleGroups
   }
 }
 //Grafana
-resource managedGrafana 'Microsoft.Dashboard/grafana@2022-08-01' =  {
-  name: 'amg-${name}-${location}'
+resource managedGrafana 'Microsoft.Dashboard/grafana@2022-08-01' =  if(prodDeployment){
+  name: grafanaName
   location: location
   tags: tags
   sku: {
@@ -261,6 +272,41 @@ resource managedGrafana 'Microsoft.Dashboard/grafana@2022-08-01' =  {
     zoneRedundancy: 'Disabled'
   }
 }
-output id string = azureMonitorWorkspace.id
-output name string = azureMonitorWorkspace.name
-output grafanaName string = managedGrafana.name
+
+var monitoringReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringReaderRoleDefName)
+var monitoringDataReaderRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringDataReaderRoleDefName)
+var grafanaAdminRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', grafanaAdminRoleDefName)
+
+resource monitoringReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if(prodDeployment){
+  name:  guid(managedGrafana.name, azureMonitorWorkspace.name, monitoringReaderRoleId)
+  scope: azureMonitorWorkspace
+  properties: {
+    roleDefinitionId: monitoringReaderRoleId
+    principalId: managedGrafana.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+resource monitoringDataReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if(prodDeployment){
+  name:  guid(managedGrafana.name, azureMonitorWorkspace.name, monitoringDataReaderRoleId)
+  scope: azureMonitorWorkspace
+  properties: {
+    roleDefinitionId: monitoringDataReaderRoleId
+    principalId: managedGrafana.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+resource grafanaAdminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if(prodDeployment){
+  name:  guid(managedGrafana.name, entraGroupID, grafanaAdminRoleId)
+  scope: managedGrafana
+  properties: {
+    roleDefinitionId: grafanaAdminRoleId
+    principalId: entraGroupID
+    principalType: 'Group'
+  }
+}
+
+
+output id string = !prodDeployment?'':azureMonitorWorkspace.id 
+output name string = !prodDeployment?'':azureMonitorWorkspace.name 
+output grafanaName string = !prodDeployment?'':managedGrafana.name 
+

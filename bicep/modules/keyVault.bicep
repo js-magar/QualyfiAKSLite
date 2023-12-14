@@ -1,12 +1,13 @@
 param location string
 param keyVaultName string
-var kvIdentityUserDefinedManagedIdentityName = 'mi-${keyVaultName}'
+param prefix string = 'aks-jm'
+
+var kvIdentityUserDefinedManagedIdentityName = '${prefix}-mi-kv-${location}'
 
 resource KVManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
   name: kvIdentityUserDefinedManagedIdentityName
   location: location
 }
-
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: keyVaultName
   location: location
@@ -25,3 +26,4 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
 }
 
 output kvIdentityUserDefinedManagedIdentityName string = KVManagedIdentity.name
+output keyVaultName string = keyVault.name

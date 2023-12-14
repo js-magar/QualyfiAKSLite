@@ -3,13 +3,14 @@ param bastionSubnetName string
 param vnetName string
 param tags object ={tag:'tag'}
 param bastionName string
+param bastionPIPName string
 
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {name: vnetName}
 resource BastionSubnet 'Microsoft.Network/virtualNetworks/subnets@2023-05-01' existing = {name: bastionSubnetName,parent: virtualNetwork}
 
 
 resource bastionPIP 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
-  name: 'pip-${bastionName}'
+  name: bastionPIPName
   location: location
   tags:tags
   sku: {
