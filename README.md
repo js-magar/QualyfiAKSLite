@@ -10,7 +10,8 @@ Once connected please run the following code to deploy the template:
 ```
 ./deploy.sh
 ```
-Spec/Requirements:
+
+## Spec/Requirements:
 Using Azure CLI and Bicep deploy the following:
 
 - [x] 1. Deploy a ‘free’ sku AKS cluster with a public control plane
@@ -35,26 +36,20 @@ Using Azure CLI and Bicep deploy the following:
 - [x] 20. Enable Container Insights for the cluster
 - [x] 21. Enable Prometheus Monitor Metrics and Grafana for the cluster
 
-Success Criteria:
+## Success Criteria:
 
 - [x] 1. Connect to the application front end via the App Gateway public ip
 - [x] 2. User node pool running without error with the front and back-end application
 - [x] 3. SSH to a node via the Bastion and the SSH keys
-```
-./tests/test3.sh [ResourceGroupName] [BastionName] [UserName]
-```
 - [x] 4. From the node load a web page via the NAT Gateway
 - [x] 5. Check cluster autoscaler logs for correct function of the cluster
 - [x] 6. Confirm the Pod autoscaler is running  (bastion then vmss)
 - [x] 7. Connect to a pod using kubectl bash command
-```
-./tests/test7.sh 
-```
 - [x] 8. Display the value of the example secret in the pod bash shell
-```
-./tests/test8.sh 
-```
 - [x] 9. Check Container Insights is running, via the portal
 - [x] 10. Check Prometheus Monitor Metrics in Grafana instance
 - [x] 11. Use Azure Loading Testing to load the AKS cluster resulting in autoscaling of the nodes and pods
 
+## Diagram
+
+![Image of Diagram](Diagram.jpg)

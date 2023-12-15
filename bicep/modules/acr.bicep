@@ -1,10 +1,7 @@
 param acrName string
-param logAnalyticsName string
 param location string
+param logAnalyticsWorkspaceID string
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = {
-  name:logAnalyticsName
-}
 resource acrResource 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   location: location
   name:acrName
@@ -42,7 +39,7 @@ resource acrDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
     scope: acrResource
     name: 'diagnostics'
     properties: {
-      workspaceId: logAnalyticsWorkspace.id
+      workspaceId: logAnalyticsWorkspaceID
       metrics: [
         {
           timeGrain: 'PT1M'

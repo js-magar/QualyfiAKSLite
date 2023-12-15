@@ -86,7 +86,7 @@ module acr 'modules/acr.bicep' = {
   name:'appContainerRegistryDeployment'
   params:{
     acrName:acrName
-    logAnalyticsName:logAnalyticsWorkspace.name
+    logAnalyticsWorkspaceID:logAnalyticsWorkspace.id
     location:location
   }
 }
