@@ -4,7 +4,6 @@ param logAnalyticsWorkspaceID string
 param appGatewayID string
 param adminUsername string
 param adminPasOrKey string
-param prefix string = 'aks-jm'
 param acrPullRDName string 
 param netContributorRoleDefName string 
 param appPoolSubnetID string

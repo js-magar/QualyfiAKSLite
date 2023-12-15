@@ -1,7 +1,7 @@
-# QualyfiAKS
+# QualyfiAKS Lite
 Welcome to my project.
 In this project I have created a deployment file for a production ‘voting’ application on an AKS cluster with the following spec/requirements stated in this document.
-
+This project contains a 'Lite' version of my QualyfiAKS Project with more sustainable skus and certain resources deleted.
 To use this template please run the following command to connect to Azure with an authenticated account:
 ```
 az login
